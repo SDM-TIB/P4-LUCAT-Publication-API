@@ -1,6 +1,6 @@
 # P4-LUCAT-Publication-API
 
-Retreive list of publication based on the input variables
+Retrieve list of publication based on the input variables
 
 ## Input Example
 
