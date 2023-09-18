@@ -10,6 +10,9 @@ from flask import Flask, abort, request, make_response
 import json
 from SPARQLWrapper import SPARQLWrapper, JSON
 import logging
+from urllib.parse import unquote,quote
+import ast
+import re
 
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)
@@ -33,9 +36,9 @@ app = Flask(__name__)
 ############################
 
 QUERY_PUBLICATIONS_RANKED_1 ="""
-SELECT DISTINCT ?id  ?score ?title ?journal  ?year ?type  ?hindex  ?authorList ?sjrstr ?cui ?cite
+SELECT DISTINCT ?id  ?score ?title ?journal  ?year ?type  ?hindex  ?authors ?sjrstr ?cui ?cite
 WHERE{
-{SELECT DISTINCT ?id SUM(distinct xsd:float(?c)) as ?score MIN(?a) as ?cui 
+{SELECT DISTINCT ?id SUM(distinct xsd:float(?c)) as ?score MIN(?a) as ?cui (GROUP_CONCAT(DISTINCT ?author; separator=";") as ?authors)
 WHERE {
 ?o <http://research.tib.eu/p4-lucat/vocab/annotates>  ?s.
                             ?o <http://research.tib.eu/p4-lucat/vocab/hasCUIAnnotation> ?a.
@@ -58,7 +61,7 @@ QUERY_PUBLICATIONS_RANKED_2_LC ="""
                             ?o a <http://research.tib.eu/p4-lucat/vocab/HAS_TOPIC> .   
                             ?s <http://purl.org/ontology/bibo/pmid> ?id.
                             ?s <http://research.tib.eu/p4-lucat/vocab/publication_isRelatedTo_Disease> <http://research.tib.eu/p4-lucat/entity/LungCancer>.
-						    ?s <http://purl.org/dc/terms/creator> ?author.
+			    ?s <http://purl.org/dc/terms/creator> ?author.
                             ?s <http://research.tib.eu/p4-lucat/vocab/journal> ?journal.
                             ?s <http://research.tib.eu/p4-lucat/vocab/hasPublicationType> ?p_type.
 
@@ -82,7 +85,6 @@ QUERY_PUBLICATIONS_RANKED_3="""
 ?s <http://purl.org/ontology/bibo/pmid> ?id.
 ?s <http://research.tib.eu/p4-lucat/vocab/publicationType> ?type.
 ?s <http://research.tib.eu/p4-lucat/vocab/rankingScore_hIndex> ?hindex.
-?s <http://purl.org/dc/terms/creator> ?authorList.
 ?s <http://purl.org/dc/terms/title> ?title.  
 ?s <http://research.tib.eu/p4-lucat/vocab/journal> ?journal.
 ?s <http://research.tib.eu/p4-lucat/vocab/year> ?year.
@@ -101,7 +103,7 @@ WHERE {
 ?s <http://purl.org/ontology/bibo/pmid> ?id.
 ?s <http://research.tib.eu/p4-lucat/vocab/journal> ?journal.
 ?s <http://research.tib.eu/p4-lucat/vocab/hasPublicationType> ?p_type.
-
+?s <http://purl.org/dc/terms/creator> ?author.
 """
 
 QUERY_PUBLICATIONS_JOURNALS="""
@@ -167,14 +169,31 @@ def build_query_with_cuis(cuis, limit , page , sort, filters,query1,query2,query
             query2+='?journal="'+journal+'" || '
         query2=query2[:-3]
         query2+=")"
-    ##########################################       
-    if len(filters["publication_types"]) >0:
-        query2+="FILTER (?p_type in ("
+    ##########################################
+    if len(filters["publication_types"]) > 0:
+        query2 += "FILTER (?p_type in ("
         for p_type in filters["publication_types"]:
-            query2+="<http://research.tib.eu/p4-lucat/entity/"+p_type.replace(" ","_").strip()+">,"
-        query2=query2[:-1]
-        query2+="))"
-    ##########################################   
+            p_type_encoded = quote(p_type.strip(), safe='')
+            query2 += "<http://research.tib.eu/p4-lucat/entity/" + p_type_encoded + ">,"
+        query2 = query2[:-1]
+        query2 += "))"
+
+    ##########################################
+
+    ##########################################
+    if len(filters["authors"]) > 0:
+        query2 += "FILTER (?author in ("
+        for author in filters["authors"]:
+            # Encoding the author string using UTF-8
+            author_encoded_utf8 = author.encode('utf-8').decode('latin-1')
+
+            # URL encoding the UTF-8 encoded author string
+            author_encoded = quote(author_encoded_utf8, safe='')
+            query2 += "<http://research.tib.eu/p4-lucat/entity/" + author_encoded + ">,"
+        query2 = query2[:-1]
+        query2 += "))"
+
+    ##########################################
     '''if len(filters["affiliations"]) >0:
         query+="FILTER ("
         for aff in filters["affiliations"]:
@@ -192,7 +211,7 @@ def build_query_with_cuis(cuis, limit , page , sort, filters,query1,query2,query
         query3+=" ORDER BY DESC(?cite)"
 
         
-    return query1+query2+query3+" LIMIT "+str(limit)+" OFFSET "+str(page)
+    return query1+query2+query3+" LIMIT "+str(limit)+" OFFSET "+str(page*limit)
     
 
 
@@ -222,7 +241,18 @@ def get_publications_ranked_data(cuis, limit , page , sort, filters,topic):
 
 
 def process_journal_type_string(journal_type):
-    return journal_type.replace("'","").replace("[","").replace("]","").strip()
+    # Use a temporary replacement for the single quote
+    journal_type = journal_type.replace("\\'", "<TEMP_QUOTE>")
+
+    # Remove unwanted characters
+    journal_type = journal_type.replace("[", "").replace("]", "").replace("'", "")
+
+    # Replace temporary string back to a single quote
+    journal_type = journal_type.replace("<TEMP_QUOTE>", "'")
+    return journal_type
+
+
+
 
 
 def get_number_of_results(cuis,filters,topic):
@@ -246,12 +276,25 @@ def get_number_of_results(cuis,filters,topic):
         query=query[:-3]
         query+=")"
     ##########################################       
-    if len(filters["publication_types"]) >0:
-        query+="FILTER (?p_type in ("
+    if len(filters["publication_types"]) > 0:
+        query += "FILTER (?p_type in ("
         for p_type in filters["publication_types"]:
-            query+="<http://research.tib.eu/p4-lucat/entity/"+p_type.replace(" ","_").strip()+">,"
-        query=query[:-1]
-        query+="))"
+            p_type_encoded = quote(p_type.strip(), safe='')
+            query += "<http://research.tib.eu/p4-lucat/entity/" + p_type_encoded + ">,"
+        query = query[:-1]
+        query += "))"
+
+    if len(filters["authors"]) > 0:
+        query += "FILTER (?author in ("
+        for author in filters["authors"]:
+            # Encoding the author string using UTF-8
+            author_encoded_utf8 = author.encode('utf-8').decode('latin-1')
+
+            # URL encoding the UTF-8 encoded author string
+            author_encoded = quote(author_encoded_utf8, safe='')
+            query += "<http://research.tib.eu/p4-lucat/entity/" + author_encoded + ">,"
+        query = query[:-1]
+        query += "))"
     query+="}"
     #print(query)
     qresults = execute_query(query)
@@ -290,7 +333,7 @@ def get_publications_filters_types(cuis,topic):
     query+="))} GROUP BY ?p_type"
     #print(query)
     qresults = execute_query(query)
-    return [{"name":x["name"]["value"] , "results":x["results"]["value"]} for x in qresults]
+    return [{"name":process_journal_type_string(x["name"]["value"]) , "results":x["results"]["value"]} for x in qresults]
 
 
 
@@ -313,10 +356,10 @@ def proccesing_response(input_dicc, limit, page, sort,topic):
     filters["authors"]=input_dicc["filter"]["authors"]
     
    
-    for f in filters["publication_types"]:
-        filters["publication_types"][filters["publication_types"].index(f)]=f.replace(',','')
-    for f in filters["authors"]:
-        filters["authors"][filters["authors"].index(f)]=f.replace(',','')
+    #for f in filters["publication_types"]:
+        #filters["publication_types"][filters["publication_types"].index(f)]=f.replace(',','')
+    #for f in filters["authors"]:
+        #filters["authors"][filters["authors"].index(f)]=f.replace(',','')
 
 
 
@@ -328,13 +371,16 @@ def proccesing_response(input_dicc, limit, page, sort,topic):
         pub1 = {}
         pub1['title'] =  result["title"]["value"]
         pub1['url'] = "https://www.ncbi.nlm.nih.gov/pubmed/"+result["id"]["value"]
-        pub1['authors'] = result['authorList']["value"].strip()
+        pub1['authors'] = [
+            unquote(x.replace("http://research.tib.eu/p4-lucat/entity/", "")).encode('latin1').decode('utf-8')
+            for x in result['authors']["value"].split(";")
+        ]
         #pub1['affiliation'] = process_journal_type_string(result["affiliation"]["value"])
         pub1['journal'] = result['journal']["value"]
         pub1['year'] = int(result["year"]["value"])
         pub1['score'] = float(result["score"]["value"])/number_cuis*100
         pub1['sjr'] = float(result["sjrstr"]["value"])
-        pub1['type'] = process_journal_type_string(result["type"]["value"])
+        pub1['type'] = process_journal_type_string(result["type"]["value"]).replace("'","")
         pub1['hindex'] = int(result["hindex"]["value"])
         pub1['citations'] = float(result["cite"]["value"])
         pub1['group'] = cuis[result["cui"]["value"][result["cui"]["value"].rfind("/")+1:]]
