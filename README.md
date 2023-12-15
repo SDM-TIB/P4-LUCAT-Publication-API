@@ -19,14 +19,10 @@ https://labs.tib.eu/sdm/p4lucat_publication_api/get_publications?limit=10&page=0
   	"C1332080",
   	"C0812281"
    ],
-   "tumorType":[
+   "histology":[
   	"C0152013"
    ],
-   "drugGroups":[
-  	"C0002771",
-  	"C0003232"
-   ],
-   "drugs":[
+   "LCdrugs":[
   	"C0000979",
   	"C0028978"
    ],
@@ -37,35 +33,12 @@ https://labs.tib.eu/sdm/p4lucat_publication_api/get_publications?limit=10&page=0
   	"C0596087",
   	"C0034619",
   	"C0543467"
-   ],
-   "immunotherapyDrugs":[
-  	"C3657270",
-  	"C3658706",
-  	"C1367202"
-   ],
-   "tkiDrugs":[
-  	"C1135135",
-  	"C2987648",
-  	"C4058811",
-  	"C1122962",
-  	"C3853921",
-  	"C3818721"
-   ],
-   "chemotherapyDrugs":[
-  	"C0008838",
-  	"C4082227",
-  	"C0771375",
-  	"C0015133",
-  	"C0079083",
-  	"C0045093",
-  	"C0144576",
-  	"C0210657",
-  	"C0078257"
    ]
 },
 	"filter":{
 		"journals":[],
-		"publication_types":[]
+		"publication_types":[],
+         "authors":[]
 	}
 }
 ```
