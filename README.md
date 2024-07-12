@@ -1,6 +1,17 @@
+
+
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 # P4-LUCAT-Publication-API
 
 Retrieve list of publication based on the input variables
+
+## License
+This work is licensed under the MIT license.
+
+## Authors
+P4-LUCAT_APIs have been developed by members of the Scientific Data Management Group at TIB, as an ongoing research effort.
+The development is co-ordinated and supervised by Maria-Esther Vidal.
+This API has been developed by Ahmad Sakor.
 
 ## Input Example
 
